@@ -1,0 +1,18 @@
+Welcome to the **rust** service agent.
+
+Plain Rust service built on Cargo. Use this for any Rust project — build, test,
+and run with `cargo`.
+
+## What this agent provides
+- Build: `cargo build`
+- Run: run the compiled binary (minimal std-only HTTP health by default)
+- Test: `cargo test` (libtest results parsed into structured reports)
+- Lint: `cargo clippy`
+- Code: file / git / edit ops, `rustfmt` fix, `cargo add` / `cargo remove`
+
+## Production
+- Docker build (multi-stage, musl/alpine)
+- Kubernetes deployment (kustomize)
+
+## Not yet implemented
+- Symbol extraction / call-graph analysis (awaiting a core rust-analyzer backend)

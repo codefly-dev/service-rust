@@ -1,0 +1,12 @@
+[package]
+name = "{{ .Service.Name.DNSCase }}"
+version = "0.1.0"
+edition = "2021"
+
+# Binary name is pinned to `app` so the builder Dockerfile can copy a
+# deterministic path (target/release/app).
+[[bin]]
+name = "app"
+path = "src/main.rs"
+
+[dependencies]

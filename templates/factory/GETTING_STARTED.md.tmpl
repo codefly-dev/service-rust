@@ -1,0 +1,19 @@
+# Rust Service
+
+Plain Rust service scaffolded by codefly.
+
+## Structure
+
+- `code/Cargo.toml` — crate definition (binary name pinned to `app`)
+- `code/src/main.rs` — entrypoint (minimal std-only HTTP health on :8080)
+
+## Commands
+
+- Build: `cargo build` (or `cargo build --release`)
+- Test: `cargo test`
+- Lint: `cargo clippy`
+- Format: `cargo fmt`
+- Run: `cargo run`
+
+Replace the default `main.rs` with your own logic — add a web framework
+(axum, actix-web, …) via `cargo add` when you need one.
