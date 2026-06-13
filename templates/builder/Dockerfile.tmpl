@@ -1,18 +1,28 @@
 # Build stage
-FROM rust:{{ .RustVersion }}-alpine AS builder
+FROM rust:slim AS builder
 
-RUN apk add --no-cache musl-dev ca-certificates
+ARG TARGETARCH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Copy source
 COPY code/ ./code/
+
 WORKDIR /app/code
+
+# Build release binary
 RUN cargo build --release
 
 # Final stage
-FROM alpine:{{ .AlpineVersion }}
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates libssl3 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -20,10 +30,12 @@ WORKDIR /app
 ENV {{ .Key }}={{ .Value }}
 {{ end }}
 
-RUN adduser -D appuser
-# The factory Cargo.toml pins the binary name to `app`.
-COPY --chown=appuser --from=builder /app/code/target/release/app .
+RUN adduser --disabled-password --gecos '' appuser
+
+COPY --chown=appuser --from=builder /app/code/target/release/* /app/app
+
 USER appuser
 
 EXPOSE 8080
+
 CMD ["./app"]

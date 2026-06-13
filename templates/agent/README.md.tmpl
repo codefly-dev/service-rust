@@ -1,18 +1,47 @@
-Welcome to the **rust** service agent.
 
-Plain Rust service built on Cargo. Use this for any Rust project — build, test,
-and run with `cargo`.
+# {{if .Service}}{{.Service.Name}}{{else}}Service{{end}} -- Rust Service Agent
 
-## What this agent provides
-- Build: `cargo build`
-- Run: run the compiled binary (minimal std-only HTTP health by default)
-- Test: `cargo test` (libtest results parsed into structured reports)
-- Lint: `cargo clippy`
-- Code: file / git / edit ops, `rustfmt` fix, `cargo add` / `cargo remove`
+## Overview
 
-## Production
-- Docker build (multi-stage, musl/alpine)
-- Kubernetes deployment (kustomize)
+This agent manages a Rust service built with axum for HTTP/gRPC.
+It handles scaffolding, building, testing, and deployment.
 
-## Not yet implemented
-- Symbol extraction / call-graph analysis (awaiting a core rust-analyzer backend)
+## Capabilities
+
+- **HTTP server** with axum
+- **gRPC server** with tonic (optional)
+- **Hot-reload** during development via cargo-watch
+- **Docker build** for production (multi-stage)
+- **Kubernetes deployment** manifests
+
+## File Layout
+
+```
+{{if .Service}}{{.Service.Name}}{{else}}service{{end}}/
+  code/
+    Cargo.toml
+    src/
+      main.rs          <- YOUR service entrypoint
+```
+
+## Common Operations
+
+### Run locally
+
+```bash
+codefly run service
+```
+
+### Run tests
+
+```bash
+codefly test service
+```
+
+## Configuration
+
+| Setting | Description |
+|---------|-------------|
+| `hot-reload` | Enable file-watching hot reload via cargo-watch |
+| `source-dir` | Directory containing Rust source (default: code) |
+| `with-workspace` | Use cargo workspace mode |

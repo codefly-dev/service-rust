@@ -1,19 +1,17 @@
 # Rust Service
 
-Plain Rust service scaffolded by codefly.
+Rust service managed by codefly.
 
 ## Structure
 
-- `code/Cargo.toml` — crate definition (binary name pinned to `app`)
-- `code/src/main.rs` — entrypoint (minimal std-only HTTP health on :8080)
+- `code/Cargo.toml` -- crate manifest
+- `code/src/main.rs` -- entrypoint (axum HTTP server on the port assigned by codefly)
 
 ## Commands
 
-- Build: `cargo build` (or `cargo build --release`)
+- Build: `cargo build`
 - Test: `cargo test`
-- Lint: `cargo clippy`
-- Format: `cargo fmt`
-- Run: `cargo run`
+- Run: run the binary from `code/`
 
-Replace the default `main.rs` with your own logic — add a web framework
-(axum, actix-web, …) via `cargo add` when you need one.
+The service reads its listen address from the `CODEFLY__ENDPOINT__` environment variables
+injected by the codefly runtime.

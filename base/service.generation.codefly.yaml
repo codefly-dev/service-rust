@@ -1,0 +1,14 @@
+# Turns this working Rust service (base/) into templates/factory/ via
+# `codefly agent generate --service <this-agent-dir>`.
+# Each `from` literal in base/ is replaced with the templated `to`.
+replacements:
+  # Cargo package / crate name (kebab-case, valid DNS label)
+  - from: codefly-base
+    to: "{{ .Service.Name.DNSCase }}"
+  # Endpoint env-var name segment (SCREAMING_SNAKE_CASE)
+  - from: CODEFLYBASE
+    to: "{{ .Service.Name.SnakeCase | upper }}"
+ignores:
+  - service.generation.codefly.yaml
+  - target
+  - Cargo.lock

@@ -1,76 +1,106 @@
-// Binary service-rust is the generic Rust agent entry point.
-//
-// All logic lives under ./pkg so specializations can import and compose the
-// reusable pieces:
-//
-//	github.com/codefly-dev/service-rust/pkg/service   — shared Service/Settings
-//	github.com/codefly-dev/service-rust/pkg/runtime   — Runtime gRPC server
-//	github.com/codefly-dev/service-rust/pkg/code      — Code gRPC server
-//	github.com/codefly-dev/service-rust/pkg/tooling   — Tooling gRPC server
-//	github.com/codefly-dev/service-rust/pkg/builder   — Builder gRPC server
-//
-// Templates are embedded here (at the binary root) and passed to
-// pkg/builder — //go:embed cannot reach up from a subpackage.
 package main
 
 import (
+	"context"
 	"embed"
 
-	"github.com/codefly-dev/core/agents"
 	"github.com/codefly-dev/core/builders"
-	"github.com/codefly-dev/core/resources"
-	"github.com/codefly-dev/core/shared"
+	"github.com/codefly-dev/core/templates"
 
-	rustbuilder "github.com/codefly-dev/service-rust/pkg/builder"
-	rustcode "github.com/codefly-dev/service-rust/pkg/code"
-	rustruntime "github.com/codefly-dev/service-rust/pkg/runtime"
-	rustservice "github.com/codefly-dev/service-rust/pkg/service"
-	rusttooling "github.com/codefly-dev/service-rust/pkg/tooling"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/codefly-dev/core/agents"
+	"github.com/codefly-dev/core/agents/services"
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	agentv0 "github.com/codefly-dev/core/generated/go/codefly/services/agent/v0"
+	configurations "github.com/codefly-dev/core/resources"
+	"github.com/codefly-dev/core/shared"
 )
 
-// Agent version loaded from agent.codefly.yaml.
-var agent = shared.Must(resources.LoadFromFs[resources.Agent](shared.Embed(infoFS)))
+// Agent version
+var agent = shared.Must(configurations.LoadFromFs[configurations.Agent](shared.Embed(infoFS)))
 
-// File dependencies watched for change detection during build.
 var requirements = builders.NewDependencies(agent.Name,
 	builders.NewDependency("service.codefly.yaml"),
 	builders.NewDependency("code").WithPathSelect(shared.NewSelect("*.rs")),
 )
 
-// Rust and Alpine versions used by the default container build.
-const (
-	RustVersion   = "1.83"
-	AlpineVersion = "3.21"
-)
+// Settings holds agent-specific configuration stored in service.codefly.yaml.
+type Settings struct {
+	HotReload     bool   `yaml:"hot-reload"`
+	SourceDir     string `yaml:"source-dir"`
+	WithWorkspace bool   `yaml:"with-workspace"`
+}
+
+// RustSourceDir returns the configured source directory, defaulting to "code".
+func (s *Settings) RustSourceDir() string {
+	if s.SourceDir != "" {
+		return s.SourceDir
+	}
+	return "code"
+}
+
+const SettingHotReload = "hot-reload"
+const SettingWithWorkspace = "with-workspace"
+
+// Service holds shared state between Runtime and Builder.
+type Service struct {
+	*services.Base
+
+	// Endpoints
+	RestEndpoint *basev0.Endpoint
+
+	// Settings
+	*Settings
+
+	sourceLocation string
+}
+
+func (s *Service) GetAgentInformation(ctx context.Context, _ *agentv0.AgentInformationRequest) (*agentv0.AgentInformation, error) {
+	defer s.Wool.Catch()
+
+	info := s.Information
+	if info == nil {
+		info = &services.Information{}
+	}
+	readme, err := templates.ApplyTemplateFrom(ctx, shared.Embed(readmeFS), "templates/agent/README.md", info)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &agentv0.AgentInformation{
+		RuntimeRequirements: []*agentv0.Runtime{},
+		Capabilities: []*agentv0.Capability{
+			{Type: agentv0.Capability_BUILDER},
+			{Type: agentv0.Capability_RUNTIME},
+		},
+		Languages: []*agentv0.Language{},
+		Protocols: []*agentv0.Protocol{
+			{Type: agentv0.Protocol_HTTP},
+		},
+		ReadMe: readme,
+	}, nil
+}
+
+func NewService() *Service {
+	return &Service{
+		Base:     services.NewServiceBase(context.Background(), agent),
+		Settings: &Settings{},
+	}
+}
 
 func main() {
-	svc := rustservice.New(agent)
-	code := rustcode.New(svc)
-	rt := rustruntime.New(svc)
+	svc := NewService()
 	agents.Serve(agents.PluginRegistration{
 		Agent:   svc,
-		Runtime: rt,
-		Builder: rustbuilder.New(svc, rustbuilder.BuildConfig{
-			FactoryFS:     factoryFS,
-			BuilderFS:     builderFS,
-			DeploymentFS:  deploymentFS,
-			Requirements:  requirements,
-			RustVersion:   RustVersion,
-			AlpineVersion: AlpineVersion,
-		}),
-		Code:    code,
-		Tooling: rusttooling.New(code, rt),
+		Runtime: NewRuntime(),
+		Builder: NewBuilder(),
 	})
 }
 
 //go:embed agent.codefly.yaml
 var infoFS embed.FS
 
-//go:embed templates/factory
-var factoryFS embed.FS
-
-//go:embed templates/builder
-var builderFS embed.FS
-
-//go:embed templates/deployment
-var deploymentFS embed.FS
+//go:embed templates/agent
+var readmeFS embed.FS

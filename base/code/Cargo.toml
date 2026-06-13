@@ -1,5 +1,5 @@
 [package]
-name = "{{ .Service.Name.DNSCase }}"
+name = "codefly-base"
 version = "0.1.0"
 edition = "2021"
 

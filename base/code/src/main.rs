@@ -1,0 +1,42 @@
+use axum::{routing::get, Json, Router};
+use serde::Serialize;
+use std::net::SocketAddr;
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: String,
+}
+
+async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "ok".to_string(),
+    })
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
+
+    // codefly injects the listen address as environment variables named after
+    // this service's endpoint (the name segment is the service name in
+    // SCREAMING_SNAKE_CASE). Fall back to 0.0.0.0:8080 for local development
+    // outside codefly.
+    let host = std::env::var("CODEFLY__ENDPOINT__CODEFLYBASE__REST__HOST")
+        .unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = std::env::var("CODEFLY__ENDPOINT__CODEFLYBASE__REST__PORT")
+        .unwrap_or_else(|_| "8080".to_string());
+
+    let addr: SocketAddr = format!("{}:{}", host, port)
+        .parse()
+        .expect("invalid listen address");
+
+    let app = Router::new().route("/health", get(health));
+
+    tracing::info!("listening on {}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect("failed to bind");
+
+    axum::serve(listener, app).await.expect("server error");
+}

@@ -1,26 +1,8 @@
-# Binaries
-service-rust
-*.exe
-*.exe~
-*.dll
 *.so
-*.dylib
-
-# Go workspace (keep module-level go.mod pinned)
-go.work
-go.work.sum
-
-# Test binaries
-*.test
-
-# Coverage + cache
-*.out
-*.hash
-.cache
-
-# Rust build artifacts (factory-scaffolded crates)
-code/target
-
-# Editor
 .idea
-.vscode
+go.work*
+dist/
+.codefly
+*.hash
+# Built agent binary (rebuilt by `codefly agent build`).
+service-rust

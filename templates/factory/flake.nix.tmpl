@@ -17,13 +17,22 @@
         in
         {
           default = pkgs.mkShell {
-            # Generic Rust service. Specializations ship their own flake with
-            # any extra tooling (protobuf, grpcurl, …).
             packages = [
-              pkgs.cargo
               pkgs.rustc
-              pkgs.clippy
+              pkgs.cargo
+              pkgs.cargo-watch
+              pkgs.rust-analyzer
               pkgs.rustfmt
+              pkgs.clippy
+            ];
+
+            # openssl-sys and friends pull pkg-config transitively; keep
+            # the defaults minimal but wire the tooling it looks for.
+            nativeBuildInputs = [
+              pkgs.pkg-config
+            ];
+            buildInputs = [
+              pkgs.openssl
             ];
           };
         });
