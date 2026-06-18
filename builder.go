@@ -8,9 +8,12 @@ import (
 	"github.com/codefly-dev/core/agents/communicate"
 	dockerhelpers "github.com/codefly-dev/core/agents/helpers/docker"
 	"github.com/codefly-dev/core/agents/services"
+	"github.com/codefly-dev/core/companions/proto"
 	agentv0 "github.com/codefly-dev/core/generated/go/codefly/services/agent/v0"
 	builderv0 "github.com/codefly-dev/core/generated/go/codefly/services/builder/v0"
+	"github.com/codefly-dev/core/languages"
 	"github.com/codefly-dev/core/resources"
+	runners "github.com/codefly-dev/core/runners/base"
 	"github.com/codefly-dev/core/shared"
 	"github.com/codefly-dev/core/standards"
 	"github.com/codefly-dev/core/templates"
@@ -103,12 +106,70 @@ func (s *Builder) Upgrade(ctx context.Context, _ *builderv0.UpgradeRequest) (*bu
 	return s.Builder.UpgradeResponse(nil, "")
 }
 
+// Sync generates a gRPC client (prost + tonic) for every declared
+// dependency that exposes a gRPC endpoint. The Rust service itself does
+// not own protos, so there is no local proto generation step (unlike the
+// go-grpc agent) — only dependency clients are emitted, under
+// code/src/external/<dep>.
 func (s *Builder) Sync(ctx context.Context, _ *builderv0.SyncRequest) (*builderv0.SyncResponse, error) {
 	defer s.Wool.Catch()
 	ctx = s.Wool.Inject(ctx)
 
-	// No proto generation for Rust agent (for now).
+	s.Wool.Debug("dependencies", wool.Field("dependencies", s.Base.Service.ServiceDependencies))
+	for _, dep := range s.Base.Service.ServiceDependencies {
+		ep, err := resources.FindGRPCEndpointFromService(ctx, dep, s.DependencyEndpoints)
+		if err != nil {
+			return s.Builder.SyncError(err)
+		}
+		if ep == nil {
+			continue
+		}
+		dest := s.Local("%s/%s", s.Settings.GrpcClientOut(), dep.Unique())
+		if err := proto.GenerateGRPC(ctx, languages.RUST, dest, dep.Unique(), ep); err != nil {
+			return s.Builder.SyncError(err)
+		}
+	}
+
+	// Opt-in: regenerate the OpenAPI spec from the service's own `openapi`
+	// subcommand so the REST endpoint stays in sync with the code.
+	if s.Settings.OpenAPI {
+		if err := s.GenerateOpenAPI(ctx); err != nil {
+			return s.Builder.SyncError(err)
+		}
+	}
 	return s.Builder.SyncResponse()
+}
+
+// GenerateOpenAPI runs the service binary's `openapi <out>` subcommand to emit
+// the spec at standards.OpenAPIPath, which CreateEndpoints then loads to
+// materialize the REST endpoint. The project must implement that subcommand
+// (e.g. with utoipa). This is the Rust analogue of the python-fastapi agent's
+// src/openapi.py step — but at Sync time, since the Rust spec is pure codegen
+// (`warden openapi` builds the document from compile-time annotations, no
+// running server required).
+func (s *Builder) GenerateOpenAPI(ctx context.Context) error {
+	env, err := runners.NewNativeEnvironment(ctx, s.sourceLocation)
+	if err != nil {
+		return s.Wool.Wrapf(err, "cannot create native environment")
+	}
+	defer func() {
+		if shutErr := env.Shutdown(ctx); shutErr != nil {
+			s.Wool.Warn("cannot shutdown openapi runner", wool.ErrField(shutErr))
+		}
+	}()
+	if err := env.Init(ctx); err != nil {
+		return s.Wool.Wrapf(err, "cannot init native environment")
+	}
+	out := s.Local(standards.OpenAPIPath)
+	proc, err := env.NewProcess("cargo", "run", "--quiet", "--", "openapi", out)
+	if err != nil {
+		return s.Wool.Wrapf(err, "cannot create openapi process")
+	}
+	if err := proc.Run(ctx); err != nil {
+		return s.Wool.Wrapf(err, "cannot generate openapi spec")
+	}
+	s.Wool.Info("generated openapi spec", wool.Field("path", out))
+	return nil
 }
 
 // DockerTemplating holds data passed to Dockerfile.tmpl.
@@ -227,6 +288,7 @@ func (s *Builder) Options() []*agentv0.Question {
 	return []*agentv0.Question{
 		communicate.NewConfirm(&agentv0.Message{Name: SettingHotReload, Message: "Code hot-reload (Recommended)?", Description: "codefly can restart your service when code changes are detected"}, true),
 		communicate.NewConfirm(&agentv0.Message{Name: SettingWithWorkspace, Message: "Use cargo workspace?", Description: "Organize Rust code as a cargo workspace"}, false),
+		communicate.NewConfirm(&agentv0.Message{Name: SettingOpenAPI, Message: "Generate REST endpoint from OpenAPI?", Description: "Run the binary's `openapi` subcommand on sync to emit openapi/api.swagger.json"}, false),
 	}
 }
 
@@ -249,6 +311,10 @@ func (s *Builder) Create(ctx context.Context, _ *builderv0.CreateRequest) (*buil
 		if err != nil {
 			return s.Builder.CreateError(err)
 		}
+		s.Settings.OpenAPI, err = communicate.Confirm(s.answers, SettingOpenAPI)
+		if err != nil {
+			return s.Builder.CreateError(err)
+		}
 	} else {
 		options := s.Options()
 		var err error
@@ -257,6 +323,10 @@ func (s *Builder) Create(ctx context.Context, _ *builderv0.CreateRequest) (*buil
 			return s.Builder.CreateError(err)
 		}
 		s.Settings.WithWorkspace, err = communicate.GetDefaultConfirm(options, SettingWithWorkspace)
+		if err != nil {
+			return s.Builder.CreateError(err)
+		}
+		s.Settings.OpenAPI, err = communicate.GetDefaultConfirm(options, SettingOpenAPI)
 		if err != nil {
 			return s.Builder.CreateError(err)
 		}

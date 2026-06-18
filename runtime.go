@@ -8,6 +8,7 @@ import (
 	"github.com/codefly-dev/core/agents/helpers/code"
 	"github.com/codefly-dev/core/agents/services"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/llmout"
 	"github.com/codefly-dev/core/resources"
 	runners "github.com/codefly-dev/core/runners/base"
 	"github.com/codefly-dev/core/wool"
@@ -242,11 +243,14 @@ func (s *Runtime) Build(ctx context.Context, req *runtimev0.BuildRequest) (*runt
 	proc.WithOutput(&output)
 
 	err = proc.Run(ctx)
+	// Compress before the output reaches the model; on failure the cargo errors
+	// are the payload, and a gRPC error drops the body, so they go in the message.
+	compressed := llmout.Compress("cargo", []string{"build"}, output.String())
 	if err != nil {
-		return s.Runtime.BuildErrorf(err, "cargo build failed")
+		return s.Runtime.BuildErrorf(err, "cargo build failed:\n%s", compressed)
 	}
 
-	return s.Runtime.BuildResponse(output.String())
+	return s.Runtime.BuildResponse(compressed)
 }
 
 func (s *Runtime) Test(ctx context.Context, _ *runtimev0.TestRequest) (*runtimev0.TestResponse, error) {
@@ -278,10 +282,14 @@ func (s *Runtime) Test(ctx context.Context, _ *runtimev0.TestRequest) (*runtimev
 	runErr := proc.Run(ctx)
 	s.testProc = nil
 
-	s.Wool.Forwardf("cargo test output:\n%s", output.String())
+	// Compress the cargo test output (failures are the bulk of it) before it
+	// reaches the model. On failure it carries via the error message, since a
+	// gRPC error drops the response body.
+	compressed := llmout.Compress("cargo", []string{"test"}, output.String())
+	s.Wool.Forwardf("cargo test output:\n%s", compressed)
 
 	if runErr != nil {
-		return s.Runtime.TestResponseWithResults(0, 0, 1, 0, 0, []string{fmt.Sprintf("cargo test failed: %v", runErr)}, runErr)
+		return s.Runtime.TestResponseWithResults(0, 0, 1, 0, 0, nil, fmt.Errorf("cargo test failed:\n%s", compressed))
 	}
 
 	return s.Runtime.TestResponseWithResults(1, 1, 0, 0, 0, nil, nil)

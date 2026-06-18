@@ -31,6 +31,17 @@ type Settings struct {
 	HotReload     bool   `yaml:"hot-reload"`
 	SourceDir     string `yaml:"source-dir"`
 	WithWorkspace bool   `yaml:"with-workspace"`
+	// OpenAPI opts the service into REST-endpoint generation: when set, Sync runs
+	// the binary's `openapi` subcommand to emit openapi/api.swagger.json, which
+	// CreateEndpoints then loads to materialize the REST endpoint. Off by default —
+	// it requires the project to implement that subcommand (e.g. via utoipa).
+	OpenAPI bool `yaml:"openapi"`
+	// GrpcClientDir is where generated per-dependency gRPC clients land (relative
+	// to the service root). Defaults to "code/src/external". A cargo workspace
+	// should point this at the crate that consumes the client (e.g.
+	// "code/crates/<engine>/src/external") so the engine crate owns the client
+	// rather than the thin bin crate.
+	GrpcClientDir string `yaml:"grpc-client-dir"`
 }
 
 // RustSourceDir returns the configured source directory, defaulting to "code".
@@ -41,8 +52,18 @@ func (s *Settings) RustSourceDir() string {
 	return "code"
 }
 
+// GrpcClientOut returns the dir for generated gRPC clients, defaulting to
+// "code/src/external" (the bin crate's src).
+func (s *Settings) GrpcClientOut() string {
+	if s.GrpcClientDir != "" {
+		return s.GrpcClientDir
+	}
+	return "code/src/external"
+}
+
 const SettingHotReload = "hot-reload"
 const SettingWithWorkspace = "with-workspace"
+const SettingOpenAPI = "openapi"
 
 // Service holds shared state between Runtime and Builder.
 type Service struct {
