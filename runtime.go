@@ -181,6 +181,9 @@ func (s *Runtime) Start(ctx context.Context, req *runtimev0.StartRequest) (*runt
 	// Add fixture
 	s.EnvironmentVariables.SetFixture(req.Fixture)
 
+	// Add per-service runtime overrides (--set <service>:KEY=VAL)
+	s.EnvironmentVariables.AddOverrides(req.GetOverrides())
+
 	startEnvs, err := s.EnvironmentVariables.All()
 	if err != nil {
 		return s.Runtime.StartErrorf(err, "getting environment variables")
