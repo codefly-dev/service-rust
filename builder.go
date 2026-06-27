@@ -124,7 +124,13 @@ func (s *Builder) Sync(ctx context.Context, _ *builderv0.SyncRequest) (*builderv
 		if ep == nil {
 			continue
 		}
-		dest := s.Local("%s/%s", s.Settings.GrpcClientOut(), dep.Unique())
+		// A dependency may override where ITS client lands (e.g. into a plugin
+		// crate that owns it), otherwise it goes under the service-level dir.
+		dir := dep.GrpcClientDir
+		if dir == "" {
+			dir = s.Settings.GrpcClientOut()
+		}
+		dest := s.Local("%s/%s", dir, dep.Unique())
 		if err := proto.GenerateGRPC(ctx, languages.RUST, dest, dep.Unique(), ep); err != nil {
 			return s.Builder.SyncError(err)
 		}
