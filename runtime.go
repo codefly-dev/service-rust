@@ -86,8 +86,18 @@ func (s *Runtime) Init(ctx context.Context, req *runtimev0.InitRequest) (*runtim
 	s.EnvironmentVariables.SetRuntimeContext(s.Runtime.RuntimeContext)
 	s.NetworkMappings = req.ProposedNetworkMappings
 
+	// Service's own configuration: configurations/<env>/*.env (incl. *.secret.env)
+	// → the service's own configured values injected into its environment. Without
+	// this a service never receives its own config (e.g. provider API keys via
+	// CODEFLY__SERVICE_SECRET_CONFIGURATION__...). Mirror python-fastapi, which
+	// already injects req.Configuration first.
+	err := s.EnvironmentVariables.AddConfigurations(ctx, req.Configuration)
+	if err != nil {
+		return s.Runtime.InitError(err)
+	}
+
 	// Project configurations
-	err := s.EnvironmentVariables.AddConfigurations(ctx, req.WorkspaceConfigurations...)
+	err = s.EnvironmentVariables.AddConfigurations(ctx, req.WorkspaceConfigurations...)
 	if err != nil {
 		return s.Runtime.InitError(err)
 	}
