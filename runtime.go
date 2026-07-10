@@ -329,14 +329,10 @@ func (s *Runtime) Stop(ctx context.Context, _ *runtimev0.StopRequest) (*runtimev
 		s.Wool.Trace("runner stopped")
 	}
 
-	// Stop file watcher
-	if s.Watcher != nil {
-		s.Watcher.Pause()
-	}
-	if s.Events != nil {
-		close(s.Events)
-		s.Events = nil
-	}
+	// Cancel the watcher and let its Start goroutine's deferred close of Events
+	// run exactly once — Stop must not close Events itself, or it races that
+	// goroutine into a "close of closed channel" panic.
+	s.Base.StopWatcher()
 
 	s.Wool.Trace("base stopped")
 	return s.Runtime.StopResponse()
