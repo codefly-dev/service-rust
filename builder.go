@@ -234,39 +234,11 @@ func (s *Builder) Deploy(ctx context.Context, req *builderv0.DeploymentRequest) 
 	defer s.Wool.Catch()
 	ctx = s.Wool.Inject(ctx)
 
-	s.Builder.LogDeployRequest(req, s.Wool.Debug)
-	s.EnvironmentVariables.SetRunning()
-
-	k, err := s.Builder.KubernetesDeploymentRequest(ctx, req)
-	if err != nil {
-		return s.Builder.DeployError(err)
-	}
-
-	err = s.EnvironmentVariables.AddEndpoints(ctx,
-		resources.LocalizeNetworkMapping(req.NetworkMappings, "localhost"),
-		resources.NewContainerNetworkAccess())
-	if err != nil {
-		return s.Builder.DeployError(err)
-	}
-	err = s.EnvironmentVariables.AddEndpoints(ctx, req.DependenciesNetworkMappings, resources.NewContainerNetworkAccess())
-	if err != nil {
-		return s.Builder.DeployError(err)
-	}
-	err = s.EnvironmentVariables.AddConfigurations(ctx, req.Configuration)
-	if err != nil {
-		return s.Builder.DeployError(err)
-	}
-	err = s.EnvironmentVariables.AddConfigurations(ctx, req.DependenciesConfigurations...)
-	if err != nil {
-		return s.Builder.DeployError(err)
-	}
-
-	err = s.Builder.KustomizeDeploy(ctx, req.Environment, k, deploymentFS, nil)
-	if err != nil {
-		return s.Builder.DeployError(err)
-	}
-
-	return s.Builder.DeployResponse()
+	return s.Builder.DeployKustomize(ctx, req, services.KustomizeDeployment{
+		EnvironmentVariables: s.EnvironmentVariables,
+		Templates:            deploymentFS,
+		Inputs:               services.ApplicationDeploymentInputs(),
+	})
 }
 
 func (s *Builder) CreateEndpoints(ctx context.Context) error {
