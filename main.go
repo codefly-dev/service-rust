@@ -14,7 +14,9 @@ import (
 	"github.com/codefly-dev/core/agents/services"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	agentv0 "github.com/codefly-dev/core/generated/go/codefly/services/agent/v0"
+	"github.com/codefly-dev/core/languages"
 	configurations "github.com/codefly-dev/core/resources"
+	runnersbase "github.com/codefly-dev/core/runners/base"
 	"github.com/codefly-dev/core/shared"
 )
 
@@ -90,18 +92,16 @@ func (s *Service) GetAgentInformation(ctx context.Context, _ *agentv0.AgentInfor
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	return &agentv0.AgentInformation{
-		RuntimeRequirements: []*agentv0.Runtime{},
-		Capabilities: []*agentv0.Capability{
-			{Type: agentv0.Capability_BUILDER},
-			{Type: agentv0.Capability_RUNTIME},
+	return services.Advertisement{
+		Backends: runnersbase.BackendSupport{
+			Local:  func() bool { return languages.HasCargoRuntime(nil) },
+			Nix:    true,
+			Docker: true,
 		},
-		Languages: []*agentv0.Language{},
-		Protocols: []*agentv0.Protocol{
-			{Type: agentv0.Protocol_HTTP},
-		},
-		ReadMe: readme,
-	}, nil
+		Toolchains: []agentv0.Toolchain_Type{agentv0.Toolchain_RUST, agentv0.Toolchain_CARGO},
+		Protocols:  []agentv0.Protocol_Type{agentv0.Protocol_HTTP},
+		ReadMe:     readme,
+	}.Build(), nil
 }
 
 func NewService() *Service {
