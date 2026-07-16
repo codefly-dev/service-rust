@@ -8,6 +8,8 @@ import (
 	"github.com/codefly-dev/core/agents/communicate"
 	dockerhelpers "github.com/codefly-dev/core/agents/helpers/docker"
 	"github.com/codefly-dev/core/agents/services"
+	"github.com/codefly-dev/core/agents/services/audit"
+	"github.com/codefly-dev/core/agents/services/sbom"
 	"github.com/codefly-dev/core/companions/proto"
 	agentv0 "github.com/codefly-dev/core/generated/go/codefly/services/agent/v0"
 	builderv0 "github.com/codefly-dev/core/generated/go/codefly/services/builder/v0"
@@ -92,12 +94,22 @@ func (s *Builder) Update(ctx context.Context, _ *builderv0.UpdateRequest) (*buil
 	return &builderv0.UpdateResponse{}, nil
 }
 
-// Audit returns Tool="missing" until cargo audit integration lands —
-// rust agent is WIP per agents/CLAUDE.md. The empty-but-valid response
-// lets `codefly audit workspace` aggregate without erroring on rust.
-func (s *Builder) Audit(ctx context.Context, _ *builderv0.AuditRequest) (*builderv0.AuditResponse, error) {
+func (s *Builder) Audit(ctx context.Context, req *builderv0.AuditRequest) (*builderv0.AuditResponse, error) {
 	defer s.Wool.Catch()
-	return s.Builder.AuditResponse(nil, nil, "missing", "RUST")
+	result, err := audit.Rust(ctx, s.sourceLocation)
+	if err != nil {
+		return s.Builder.AuditError(err)
+	}
+	return s.Builder.AuditResponse(req, result.Findings, result.Outdated, result.Tool, result.Language)
+}
+
+func (s *Builder) SBOM(ctx context.Context, req *builderv0.SBOMRequest) (*builderv0.SBOMResponse, error) {
+	defer s.Wool.Catch()
+	result, err := sbom.Rust(ctx, s.sourceLocation, req.GetIncludeDevDependencies())
+	if err != nil {
+		return s.Builder.SBOMError(err)
+	}
+	return s.Builder.SBOMResponse(result.Bom, result.Tool, result.Language, result.SHA256)
 }
 
 // Upgrade is a NOOP for rust until cargo update integration lands.
