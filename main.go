@@ -5,6 +5,7 @@ import (
 	"embed"
 
 	"github.com/codefly-dev/core/builders"
+	corecode "github.com/codefly-dev/core/code"
 	"github.com/codefly-dev/core/templates"
 
 	"google.golang.org/grpc/codes"
@@ -18,6 +19,7 @@ import (
 	configurations "github.com/codefly-dev/core/resources"
 	runnersbase "github.com/codefly-dev/core/runners/base"
 	"github.com/codefly-dev/core/shared"
+	"github.com/codefly-dev/core/toolbox/lang"
 )
 
 // Agent version
@@ -78,6 +80,7 @@ type Service struct {
 	*Settings
 
 	sourceLocation string
+	activeEnv      runnersbase.RunnerEnvironment
 }
 
 func (s *Service) GetAgentInformation(ctx context.Context, _ *agentv0.AgentInformationRequest) (*agentv0.AgentInformation, error) {
@@ -99,6 +102,7 @@ func (s *Service) GetAgentInformation(ctx context.Context, _ *agentv0.AgentInfor
 			Docker: true,
 		},
 		Toolchains: []agentv0.Toolchain_Type{agentv0.Toolchain_RUST, agentv0.Toolchain_CARGO},
+		Languages:  []agentv0.Language_Type{agentv0.Language_RUST},
 		Protocols:  []agentv0.Protocol_Type{agentv0.Protocol_HTTP},
 		ReadMe:     readme,
 	}.Build(), nil
@@ -113,10 +117,15 @@ func NewService() *Service {
 
 func main() {
 	svc := NewService()
+	code := NewCode(svc)
+	tooling := corecode.NewSourceTooling(code)
 	agents.Serve(agents.PluginRegistration{
 		Agent:   svc,
-		Runtime: NewRuntime(),
-		Builder: NewBuilder(),
+		Runtime: NewRuntime(svc),
+		Builder: NewBuilder(svc),
+		Code:    code,
+		Tooling: tooling,
+		Toolbox: lang.NewSourceToolboxFromTooling(agent.Name, agent.Version, tooling),
 	})
 }
 

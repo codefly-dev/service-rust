@@ -29,10 +29,8 @@ type Runtime struct {
 	testProc runners.Proc
 }
 
-func NewRuntime() *Runtime {
-	return &Runtime{
-		Service: NewService(),
-	}
+func NewRuntime(service *Service) *Runtime {
+	return &Runtime{Service: service}
 }
 
 func (s *Runtime) Load(ctx context.Context, req *runtimev0.LoadRequest) (*runtimev0.LoadResponse, error) {
@@ -152,6 +150,7 @@ func (s *Runtime) Init(ctx context.Context, req *runtimev0.InitRequest) (*runtim
 			return s.Runtime.InitErrorf(err, "cannot create native environment")
 		}
 	}
+	s.activeEnv = s.runnerEnv
 
 	allEnvs, err := s.EnvironmentVariables.All()
 	if err != nil {

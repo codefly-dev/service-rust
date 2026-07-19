@@ -31,10 +31,8 @@ type Builder struct {
 	answers map[string]*agentv0.Answer
 }
 
-func NewBuilder() *Builder {
-	return &Builder{
-		Service: NewService(),
-	}
+func NewBuilder(service *Service) *Builder {
+	return &Builder{Service: service}
 }
 
 func (s *Builder) Load(ctx context.Context, req *builderv0.LoadRequest) (*builderv0.LoadResponse, error) {
