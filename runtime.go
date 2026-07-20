@@ -273,13 +273,15 @@ func (s *Runtime) Test(ctx context.Context, _ *runtimev0.TestRequest) (*runtimev
 		return s.Runtime.TestErrorf(err, "getting environment variables")
 	}
 
-	proc, err := s.runnerEnv.NewProcess("cargo", "test", "--", "--format=json")
+	// Stable Rust rejects libtest's JSON formatter unless the nightly-only
+	// -Z unstable-options gate is enabled. Process construction cannot detect
+	// that execution-time failure, so the former fallback was unreachable and
+	// every stable Cargo suite was reported as failed. Plain cargo test is the
+	// portable contract; structured event support must use a stable interface
+	// when one exists rather than silently requiring nightly.
+	proc, err := s.runnerEnv.NewProcess("cargo", "test")
 	if err != nil {
-		// Fall back to plain cargo test if --format=json not supported
-		proc, err = s.runnerEnv.NewProcess("cargo", "test")
-		if err != nil {
-			return s.Runtime.TestErrorf(err, "creating cargo test process")
-		}
+		return s.Runtime.TestErrorf(err, "creating cargo test process")
 	}
 
 	proc.WithEnvironmentVariables(ctx, testEnvs...)
