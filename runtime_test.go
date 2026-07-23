@@ -8,7 +8,7 @@ import (
 	runtimev0 "github.com/codefly-dev/core/generated/go/codefly/services/runtime/v0"
 )
 
-func TestCargoTestArgsHonorsWorkspaceSuiteFilterAndPackage(t *testing.T) {
+func TestCargoTestArgsHonorsTargetedSuiteFilterAndPackage(t *testing.T) {
 	request := &runtimev0.TestRequest{
 		Target:  "warden-plugins-evidence",
 		Suite:   "unit",
@@ -21,7 +21,6 @@ func TestCargoTestArgsHonorsWorkspaceSuiteFilterAndPackage(t *testing.T) {
 	}
 	want := []string{
 		"test",
-		"--workspace",
 		"--lib",
 		"--bins",
 		"--verbose",
@@ -44,11 +43,21 @@ func TestCargoTestArgsMapsDirectoryTargetToManifestPath(t *testing.T) {
 	}
 	want := []string{
 		"test",
-		"--workspace",
 		"--tests",
 		"--manifest-path",
 		"crates/evidence/Cargo.toml",
 	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cargo args = %#v, want %#v", got, want)
+	}
+}
+
+func TestCargoTestArgsUsesWorkspaceOnlyWithoutTarget(t *testing.T) {
+	got, err := cargoTestArgs(&runtimev0.TestRequest{Suite: "unit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"test", "--workspace", "--lib", "--bins"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("cargo args = %#v, want %#v", got, want)
 	}

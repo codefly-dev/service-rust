@@ -359,7 +359,11 @@ func cargoTestArgs(req *runtimev0.TestRequest) ([]string, error) {
 		)
 	}
 
-	args := []string{"test", "--workspace"}
+	args := []string{"test"}
+	target := strings.TrimSpace(req.GetTarget())
+	if target == "" {
+		args = append(args, "--workspace")
+	}
 	switch req.GetSuite() {
 	case "":
 	case "unit":
@@ -372,7 +376,7 @@ func cargoTestArgs(req *runtimev0.TestRequest) ([]string, error) {
 	if req.GetVerbose() {
 		args = append(args, "--verbose")
 	}
-	if target := strings.TrimSpace(req.GetTarget()); target != "" {
+	if target != "" {
 		switch {
 		case filepath.Base(target) == "Cargo.toml":
 			args = append(args, "--manifest-path", target)
