@@ -10,3 +10,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+codefly-sdk = { version = "0.1.0", git = "https://github.com/codefly-dev/sdk-rust.git", rev = "29cb643685bf5c0c3b3bd92c24f50ab2678d0523" }
