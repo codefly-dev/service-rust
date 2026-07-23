@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/codefly-dev/core/agents/helpers/code"
 	"github.com/codefly-dev/core/agents/services"
@@ -11,6 +13,8 @@ import (
 	"github.com/codefly-dev/core/llmout"
 	"github.com/codefly-dev/core/resources"
 	runners "github.com/codefly-dev/core/runners/base"
+	rustrunner "github.com/codefly-dev/core/runners/rust"
+	"github.com/codefly-dev/core/runners/testselection"
 	"github.com/codefly-dev/core/wool"
 
 	runtimev0 "github.com/codefly-dev/core/generated/go/codefly/services/runtime/v0"
@@ -262,11 +266,19 @@ func (s *Runtime) Build(ctx context.Context, req *runtimev0.BuildRequest) (*runt
 	return s.Runtime.BuildResponse(compressed)
 }
 
-func (s *Runtime) Test(ctx context.Context, _ *runtimev0.TestRequest) (*runtimev0.TestResponse, error) {
+func (s *Runtime) Test(ctx context.Context, req *runtimev0.TestRequest) (*runtimev0.TestResponse, error) {
 	defer s.Wool.Catch()
 	ctx = s.Wool.Inject(ctx)
 
-	s.Infof("running cargo test")
+	args, err := cargoTestArgs(req)
+	if err != nil {
+		return s.Runtime.TestErrorf(err, "invalid Rust test request")
+	}
+	s.Wool.Info("running cargo tests",
+		wool.Field("target", req.GetTarget()),
+		wool.Field("filters", req.GetFilters()),
+		wool.Field("suite", req.GetSuite()),
+		wool.Field("extra_args", req.GetExtraArgs()))
 
 	testEnvs, err := s.EnvironmentVariables.All()
 	if err != nil {
@@ -279,7 +291,7 @@ func (s *Runtime) Test(ctx context.Context, _ *runtimev0.TestRequest) (*runtimev
 	// every stable Cargo suite was reported as failed. Plain cargo test is the
 	// portable contract; structured event support must use a stable interface
 	// when one exists rather than silently requiring nightly.
-	proc, err := s.runnerEnv.NewProcess("cargo", "test")
+	proc, err := s.runnerEnv.NewProcess("cargo", args...)
 	if err != nil {
 		return s.Runtime.TestErrorf(err, "creating cargo test process")
 	}
@@ -289,21 +301,96 @@ func (s *Runtime) Test(ctx context.Context, _ *runtimev0.TestRequest) (*runtimev
 	var output strings.Builder
 	proc.WithOutput(&output)
 
+	started := time.Now()
 	s.testProc = proc
 	runErr := proc.Run(ctx)
 	s.testProc = nil
+	duration := time.Since(started)
 
 	// Compress the cargo test output (failures are the bulk of it) before it
 	// reaches the model. On failure it carries via the error message, since a
 	// gRPC error drops the response body.
-	compressed := llmout.Compress("cargo", []string{"test"}, output.String())
+	compressed := llmout.Compress("cargo", args, output.String())
 	s.Wool.Forwardf("cargo test output:\n%s", compressed)
 
+	summary := rustrunner.ParseCargoTest(output.String())
+	s.Wool.Forwardf("Tests: %s", summary.SummaryLine())
+	for _, failure := range summary.Failures {
+		s.Wool.Forwardf("%s", failure)
+	}
+	response := rustrunner.ParseCargoTestStructured(output.String()).
+		ToProtoResponse("cargo-test", req.GetSuite(), duration)
+
+	if runErr == nil && len(req.GetFilters()) > 0 && response.GetCounts().GetTotal() == 0 {
+		runErr = fmt.Errorf("cargo test filter %q matched no tests", req.GetFilters()[0])
+	}
 	if runErr != nil {
-		return s.Runtime.TestResponseWithResults(0, 0, 1, 0, 0, nil, fmt.Errorf("cargo test failed:\n%s", compressed))
+		return response, fmt.Errorf("cargo test failed: %w\n%s", runErr, compressed)
+	}
+	return response, nil
+}
+
+// cargoTestArgs is the one Rust-native translation boundary for Codefly's
+// language-neutral TestRequest. Unsupported semantics fail closed: the agent
+// never certifies a broader run because a requested selector was ignored.
+func cargoTestArgs(req *runtimev0.TestRequest) ([]string, error) {
+	if err := testselection.ValidateRequest(req); err != nil {
+		return nil, err
+	}
+	if req.GetSelection() != nil {
+		return nil, fmt.Errorf("typed Rust test selection is not supported yet")
+	}
+	if req.GetFormula() != nil {
+		return nil, fmt.Errorf("Rust test formulas are not supported")
+	}
+	if req.GetRace() {
+		return nil, fmt.Errorf("Rust cargo test does not support the race option")
+	}
+	if req.GetCoverage() {
+		return nil, fmt.Errorf("Rust cargo test does not provide built-in coverage")
+	}
+	if req.GetTimeout() != "" {
+		return nil, fmt.Errorf("Rust cargo test does not support a portable per-test timeout")
+	}
+	if len(req.GetFilters()) > 1 {
+		return nil, fmt.Errorf(
+			"stable cargo test accepts one native substring filter; got %d",
+			len(req.GetFilters()),
+		)
 	}
 
-	return s.Runtime.TestResponseWithResults(1, 1, 0, 0, 0, nil, nil)
+	args := []string{"test", "--workspace"}
+	switch req.GetSuite() {
+	case "":
+	case "unit":
+		args = append(args, "--lib", "--bins")
+	case "integration":
+		args = append(args, "--tests")
+	default:
+		return nil, fmt.Errorf("unsupported Rust test suite %q", req.GetSuite())
+	}
+	if req.GetVerbose() {
+		args = append(args, "--verbose")
+	}
+	if target := strings.TrimSpace(req.GetTarget()); target != "" {
+		switch {
+		case filepath.Base(target) == "Cargo.toml":
+			args = append(args, "--manifest-path", target)
+		case strings.Contains(target, "/") || strings.HasPrefix(target, "."):
+			args = append(args, "--manifest-path", filepath.Join(target, "Cargo.toml"))
+		default:
+			args = append(args, "--package", target)
+		}
+	}
+	args = append(args, req.GetExtraArgs()...)
+	if len(req.GetFilters()) == 1 {
+		filter := strings.TrimSpace(req.GetFilters()[0])
+		if filter == "" || strings.HasPrefix(filter, "-") {
+			return nil, fmt.Errorf("Rust test filter must be a non-empty native substring")
+		}
+		args = append(args, filter)
+	}
+	return args, nil
 }
 
 func (s *Runtime) Information(ctx context.Context, req *runtimev0.InformationRequest) (*runtimev0.InformationResponse, error) {
