@@ -14,11 +14,58 @@ spec:
         app: {{ .Service.Name.DNSCase }}
         sha: {{ .Sha }}
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: {{ .Service.Name.DNSCase }}
-          image: image:tag
+          image: {{ .Image }}
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          startupProbe:
+            tcpSocket:
+              port: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+          livenessProbe:
+            tcpSocket:
+              port: 8080
           envFrom:
             - configMapRef:
                 name: cm-{{ .Service.Name.DNSCase }}
+{{- if not .Restricted }}
             - secretRef:
                 name: secret-{{ .Service.Name.DNSCase }}
+{{- end }}
+{{- if and .Restricted .SecretReferences }}
+          env:
+{{- range $environmentVariable, $reference := .SecretReferences }}
+            - name: {{ $environmentVariable }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $reference.Name }}
+                  key: {{ $reference.Key }}
+                  optional: {{ $reference.Optional }}
+{{- end }}
+{{- end }}
