@@ -1,0 +1,39 @@
+version: 2
+
+project_name: service-rust
+
+builds:
+  # ARCHITECTURE: Core's authoritative semantic index uses real tree-sitter
+  # grammars. Release binaries therefore require CGO and the cross compilers
+  # supplied by goreleaser-cross; disabling CGO would make the agent artifact
+  # differ from the production capability qualified in CI.
+  - id: darwin-amd64
+    binary: service-rust
+    env:
+      - CGO_ENABLED=1
+      - CC=o64-clang
+      - CXX=o64-clang++
+    goos: [darwin]
+    goarch: [amd64]
+  - id: darwin-arm64
+    binary: service-rust
+    env:
+      - CGO_ENABLED=1
+      - CC=oa64-clang
+      - CXX=oa64-clang++
+    goos: [darwin]
+    goarch: [arm64]
+  - id: linux-amd64
+    binary: service-rust
+    env:
+      - CGO_ENABLED=1
+      - CC=x86_64-linux-gnu-gcc
+      - CXX=x86_64-linux-gnu-g++
+    goos: [linux]
+    goarch: [amd64]
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    # Must match Core's production agent downloader contract.
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
