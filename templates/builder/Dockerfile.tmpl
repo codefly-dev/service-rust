@@ -14,8 +14,17 @@ COPY code/ ./code/
 
 WORKDIR /app/code
 
-# Build release binary
-RUN cargo build --release
+# Build and stage the one executable this service can run. Cargo also writes
+# dependency metadata and directories under target/release, so the runtime
+# image must never COPY that directory with a wildcard. Multiple binaries are
+# ambiguous for cargo run as well; fail here with an actionable contract error.
+RUN cargo build --release \
+    && set -- $(find target/release -maxdepth 1 -type f -perm -111 -print) \
+    && if [ "$#" -ne 1 ]; then \
+         echo "expected exactly one release executable, found $#" >&2; \
+         exit 1; \
+       fi \
+    && cp "$1" /app/codefly-service
 
 # Final stage
 FROM debian:bookworm-slim
@@ -32,7 +41,7 @@ ENV {{ .Key }}={{ .Value }}
 
 RUN adduser --disabled-password --gecos '' appuser
 
-COPY --chown=appuser --from=builder /app/code/target/release/* /app/app
+COPY --chown=appuser --from=builder /app/codefly-service /app/app
 
 USER appuser
 
