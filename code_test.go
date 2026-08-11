@@ -16,7 +16,7 @@ import (
 	toolingv0 "github.com/codefly-dev/core/generated/go/codefly/services/tooling/v0"
 )
 
-func TestRustToolingReportsSemanticCoverageHonestly(t *testing.T) {
+func TestRustToolingProjectsRustSemanticSource(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "lib.rs"), []byte("pub fn run() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -27,8 +27,15 @@ func TestRustToolingReportsSemanticCoverageHonestly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.GetFailure() != nil || response.GetIndex().GetState() != basev0.SemanticIndexState_SEMANTIC_INDEX_STATE_NOT_ATTEMPTED || len(response.GetIndex().GetIssues()) != 1 || response.GetIndex().GetIssues()[0].GetCode() != "unsupported_source" {
+	index := response.GetIndex()
+	if response.GetFailure() != nil || index.GetState() != basev0.SemanticIndexState_SEMANTIC_INDEX_STATE_COMPLETE || len(index.GetIssues()) != 0 {
 		t.Fatalf("semantic response = %+v", response)
+	}
+	if len(index.GetLanguages()) != 1 || index.GetLanguages()[0] != "rust" || len(index.GetFiles()) != 1 || index.GetFiles()[0].GetPath() != "lib.rs" {
+		t.Fatalf("Rust semantic coverage = %+v", index)
+	}
+	if len(index.GetSymbols()) != 1 || index.GetSymbols()[0].GetQualifiedName() != "lib.run" || !canonicalSHA256(index.GetSymbols()[0].GetDeclarationSha256()) {
+		t.Fatalf("Rust semantic symbols = %+v", index.GetSymbols())
 	}
 }
 
@@ -52,8 +59,7 @@ func TestRustToolingCarriesCurrentSemanticSymbolContract(t *testing.T) {
 			continue
 		}
 		hash := symbol.GetDeclarationSha256()
-		decoded, decodeErr := hex.DecodeString(hash)
-		if decodeErr != nil || len(decoded) != sha256.Size || hash != strings.ToLower(hash) {
+		if !canonicalSHA256(hash) {
 			t.Fatalf("SCRIPT_PATH declaration hash = %q, want canonical SHA-256", hash)
 		}
 		return
@@ -63,7 +69,7 @@ func TestRustToolingCarriesCurrentSemanticSymbolContract(t *testing.T) {
 
 func TestRustFixDryRunUsesManifestEditionAndDoesNotWrite(t *testing.T) {
 	if _, err := exec.LookPath("rustfmt"); err != nil {
-		t.Skip("rustfmt not installed")
+		t.Fatalf("rustfmt is required for the production Rust formatter proof: %v", err)
 	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname='sample'\nedition='2024'\n"), 0o644); err != nil {
@@ -89,6 +95,11 @@ func TestRustFixDryRunUsesManifestEditionAndDoesNotWrite(t *testing.T) {
 	if err != nil || string(written) != string(original) {
 		t.Fatalf("dry-run changed source: err=%v content=%q", err, written)
 	}
+}
+
+func canonicalSHA256(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
 }
 
 func TestRustEditionFindsNearestManifest(t *testing.T) {
