@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	corecode "github.com/codefly-dev/core/code"
@@ -27,6 +30,35 @@ func TestRustToolingReportsSemanticCoverageHonestly(t *testing.T) {
 	if response.GetFailure() != nil || response.GetIndex().GetState() != basev0.SemanticIndexState_SEMANTIC_INDEX_STATE_NOT_ATTEMPTED || len(response.GetIndex().GetIssues()) != 1 || response.GetIndex().GetIssues()[0].GetCode() != "unsupported_source" {
 		t.Fatalf("semantic response = %+v", response)
 	}
+}
+
+func TestRustToolingCarriesCurrentSemanticSymbolContract(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tool.mjs"), []byte("const SCRIPT_PATH = 'tool';\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService()
+	service.sourceLocation = dir
+	response, err := corecode.NewSourceTooling(NewCode(service)).GetSemanticIndex(t.Context(), &toolingv0.GetSemanticIndexRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := response.GetIndex()
+	if response.GetFailure() != nil || index.GetState() != basev0.SemanticIndexState_SEMANTIC_INDEX_STATE_COMPLETE {
+		t.Fatalf("semantic response = %+v", response)
+	}
+	for _, symbol := range index.GetSymbols() {
+		if symbol.GetName() != "SCRIPT_PATH" {
+			continue
+		}
+		hash := symbol.GetDeclarationSha256()
+		decoded, decodeErr := hex.DecodeString(hash)
+		if decodeErr != nil || len(decoded) != sha256.Size || hash != strings.ToLower(hash) {
+			t.Fatalf("SCRIPT_PATH declaration hash = %q, want canonical SHA-256", hash)
+		}
+		return
+	}
+	t.Fatalf("SCRIPT_PATH missing from semantic symbols: %+v", index.GetSymbols())
 }
 
 func TestRustFixDryRunUsesManifestEditionAndDoesNotWrite(t *testing.T) {
