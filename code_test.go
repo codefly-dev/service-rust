@@ -39,6 +39,43 @@ func TestRustToolingProjectsRustSemanticSource(t *testing.T) {
 	}
 }
 
+func TestRustToolingProjectsCargoInformation(t *testing.T) {
+	if _, err := exec.LookPath("cargo"); err != nil {
+		t.Fatalf("cargo is required for the production Rust project-info proof: %v", err)
+	}
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname='agent-project-info'\nversion='0.1.0'\nedition='2024'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "src", "lib.rs"), []byte("use std::fmt;\npub fn display(value: impl fmt::Display) -> String { value.to_string() }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(t.Context(), "cargo", "generate-lockfile", "--offline")
+	command.Dir = dir
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("cargo generate-lockfile: %v: %s", err, output)
+	}
+
+	service := NewService()
+	service.sourceLocation = dir
+	response, err := corecode.NewSourceTooling(NewCode(service)).GetProjectInfo(t.Context(), &toolingv0.GetProjectInfoRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failure := response.GetFailure(); failure.GetCode() != basev0.FailureCode_FAILURE_CODE_UNSPECIFIED {
+		t.Fatalf("project info failure = %+v", failure)
+	}
+	if response.GetLanguage() != "rust" || response.GetLanguageVersion() != "2024" || response.GetModule() != "agent-project-info" {
+		t.Fatalf("project info = %+v", response)
+	}
+	if len(response.GetPackages()) != 1 || response.GetPackages()[0].GetRelativePath() != "." || len(response.GetSourceFiles()) != 1 {
+		t.Fatalf("project packages/source = %+v / %+v", response.GetPackages(), response.GetSourceFiles())
+	}
+}
+
 func TestRustToolingCarriesCurrentSemanticSymbolContract(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "tool.mjs"), []byte("const SCRIPT_PATH = 'tool';\n"), 0o644); err != nil {
