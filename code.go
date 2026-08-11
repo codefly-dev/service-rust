@@ -19,25 +19,25 @@ var cargoEditionPattern = regexp.MustCompile(`(?m)^\s*edition\s*=\s*["'](2015|20
 // Code adds rustfmt to core's secure file/edit/git implementation. rustfmt
 // consumes stdin and emits stdout, leaving core as the only workspace writer.
 type Code struct {
-	*corecode.DefaultCodeServer
+	*corecode.RustCodeServer
 	service     *Service
 	initialized bool
 }
 
 func NewCode(service *Service) *Code {
-	return &Code{service: service, DefaultCodeServer: corecode.NewDefaultCodeServer(".")}
+	return &Code{service: service, RustCodeServer: corecode.NewRustCodeServer(".")}
 }
 
 func (c *Code) Execute(ctx context.Context, request *codev0.CodeRequest) (*codev0.CodeResponse, error) {
 	c.ensureInit()
-	return c.DefaultCodeServer.Execute(ctx, request)
+	return c.RustCodeServer.Execute(ctx, request)
 }
 
 func (c *Code) ensureInit() {
 	if c.initialized {
 		return
 	}
-	c.DefaultCodeServer = corecode.NewDefaultCodeServer(c.sourceDir(), corecode.WithSourceFixer(c.fixRust))
+	c.RustCodeServer = corecode.NewRustCodeServer(c.sourceDir(), corecode.WithSourceFixer(c.fixRust))
 	c.initialized = true
 }
 
