@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	corecode "github.com/codefly-dev/core/code"
+	"github.com/codefly-dev/core/code/semantic"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	codev0 "github.com/codefly-dev/core/generated/go/codefly/services/code/v0"
 	runners "github.com/codefly-dev/core/runners/base"
@@ -25,7 +26,7 @@ type Code struct {
 }
 
 func NewCode(service *Service) *Code {
-	return &Code{service: service, RustCodeServer: corecode.NewRustCodeServer(".")}
+	return &Code{service: service, RustCodeServer: corecode.NewRustCodeServer(".", corecode.WithSemanticAnalyzer(semantic.New()))}
 }
 
 func (c *Code) Execute(ctx context.Context, request *codev0.CodeRequest) (*codev0.CodeResponse, error) {
@@ -37,7 +38,7 @@ func (c *Code) ensureInit() {
 	if c.initialized {
 		return
 	}
-	c.RustCodeServer = corecode.NewRustCodeServer(c.sourceDir(), corecode.WithSourceFixer(c.fixRust))
+	c.RustCodeServer = corecode.NewRustCodeServer(c.sourceDir(), corecode.WithSourceFixer(c.fixRust), corecode.WithSemanticAnalyzer(semantic.New()))
 	c.initialized = true
 }
 
