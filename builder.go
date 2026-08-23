@@ -220,6 +220,12 @@ func (s *Builder) Build(ctx context.Context, req *builderv0.BuildRequest) (*buil
 		return s.Builder.BuildError(err)
 	}
 
+	// When the caller owns the build (output_directory set), emit the recipe and
+	// let the caller run docker buildx instead of building the image in-process.
+	if services.BuildPlanRequested(req) {
+		return s.Builder.SingleImageBuildResponse(req, image.FullName())
+	}
+
 	b, err := dockerhelpers.NewBuilder(dockerhelpers.BuilderConfiguration{
 		Root:        s.Location,
 		Dockerfile:  "builder/Dockerfile",
