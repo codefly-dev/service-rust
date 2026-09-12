@@ -3,7 +3,7 @@ module github.com/codefly-dev/service-rust
 go 1.27.0
 
 require (
-	github.com/codefly-dev/core v0.3.28-0.20260912121043-e95db35265b0
+	github.com/codefly-dev/core v0.3.28-0.20260912122621-177cb87e85ee
 	google.golang.org/grpc v1.83.0
 	gopkg.in/yaml.v3 v3.0.1
 )

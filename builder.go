@@ -4,6 +4,8 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/codefly-dev/core/agents/communicate"
 	dockerhelpers "github.com/codefly-dev/core/agents/helpers/docker"
@@ -214,6 +216,10 @@ func (s *Builder) Build(ctx context.Context, req *builderv0.BuildRequest) (*buil
 	}
 
 	docker := DockerTemplating{}
+
+	if err = os.Remove(filepath.Join(req.GetOutputDirectory(), "Dockerfile")); err != nil && !os.IsNotExist(err) {
+		return s.Builder.BuildError(err)
+	}
 
 	err = s.Templates(ctx, docker, services.WithBuilder(builderFS).WithDestination("%s", req.GetOutputDirectory()))
 	if err != nil {

@@ -30,6 +30,17 @@ func TestBuildEmitsRecipeWhenOutputDirectorySet(t *testing.T) {
 	location := t.TempDir()
 	outputDirectory := filepath.Join(t.TempDir(), "recipes")
 
+	protected := filepath.Join(location, "protected")
+	if err := os.WriteFile(protected, []byte("must stay unchanged"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outputDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(protected, filepath.Join(outputDirectory, "Dockerfile")); err != nil {
+		t.Fatal(err)
+	}
+
 	svc := NewService()
 	identity := &basev0.ServiceIdentity{
 		Workspace:     "test",
@@ -109,6 +120,13 @@ func TestBuildEmitsRecipeWhenOutputDirectorySet(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(outputDirectory, "Dockerfile")); err != nil {
 			t.Fatalf("Dockerfile not rendered into output directory: %v", err)
 		}
+	}
+	untouched, err := os.ReadFile(protected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(untouched) != "must stay unchanged" {
+		t.Fatal("rendering overwrote the Dockerfile symlink target")
 	}
 	fresh, err := os.ReadFile(filepath.Join(outputDirectory, "Dockerfile"))
 	if err != nil {
