@@ -4,8 +4,6 @@ import (
 	"context"
 	"embed"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/codefly-dev/core/agents/communicate"
 	dockerhelpers "github.com/codefly-dev/core/agents/helpers/docker"
@@ -217,7 +215,8 @@ func (s *Builder) Build(ctx context.Context, req *builderv0.BuildRequest) (*buil
 
 	docker := DockerTemplating{}
 
-	if err = os.Remove(filepath.Join(req.GetOutputDirectory(), "Dockerfile")); err != nil && !os.IsNotExist(err) {
+	emitted, err := services.PrepareRecipeDestination(builderFS, req.GetOutputDirectory())
+	if err != nil {
 		return s.Builder.BuildError(err)
 	}
 
@@ -226,7 +225,7 @@ func (s *Builder) Build(ctx context.Context, req *builderv0.BuildRequest) (*buil
 		return s.Builder.BuildError(err)
 	}
 
-	return s.Builder.SingleImageBuildResponse(req, image.FullName())
+	return s.Builder.SingleImageBuildResponse(req, image.FullName(), emitted)
 }
 
 func (s *Builder) BuildCapabilities(context.Context, *builderv0.BuildCapabilitiesRequest) (*builderv0.BuildCapabilitiesResponse, error) {
