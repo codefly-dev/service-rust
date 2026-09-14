@@ -197,7 +197,9 @@ func (s *Builder) Build(ctx context.Context, req *builderv0.BuildRequest) (*buil
 	defer s.Wool.Catch()
 	ctx = s.Wool.Inject(ctx)
 
-	s.Infof("building rust service docker image")
+	if !services.BuildPlanRequested(req) {
+		return s.Builder.BuildError(fmt.Errorf("BuildRequest.output_directory is required for image recipes"))
+	}
 
 	dockerRequest, err := s.Builder.DockerBuildRequest(ctx, req)
 	if err != nil {
@@ -213,37 +215,21 @@ func (s *Builder) Build(ctx context.Context, req *builderv0.BuildRequest) (*buil
 
 	docker := DockerTemplating{}
 
-	_ = shared.DeleteFile(ctx, s.Location+"/builder/Dockerfile")
-
-	err = s.Templates(ctx, docker, services.WithBuilder(builderFS))
+	emitted, err := services.PrepareRecipeDestination(builderFS, req.GetOutputDirectory())
 	if err != nil {
 		return s.Builder.BuildError(err)
 	}
 
-	// When the caller owns the build (output_directory set), emit the recipe and
-	// let the caller run docker buildx instead of building the image in-process.
-	if services.BuildPlanRequested(req) {
-		return s.Builder.SingleImageBuildResponse(req, image.FullName())
-	}
-
-	b, err := dockerhelpers.NewBuilder(dockerhelpers.BuilderConfiguration{
-		Root:        s.Location,
-		Dockerfile:  "builder/Dockerfile",
-		Ignorefile:  "builder/dockerignore",
-		Destination: image,
-		Output:      s.Wool,
-	})
+	err = s.Templates(ctx, docker, services.WithBuilder(builderFS).WithDestination("%s", req.GetOutputDirectory()))
 	if err != nil {
 		return s.Builder.BuildError(err)
 	}
 
-	_, err = b.Build(ctx)
-	if err != nil {
-		return s.Builder.BuildError(err)
-	}
+	return s.Builder.SingleImageBuildResponse(req, image.FullName(), emitted)
+}
 
-	s.Builder.WithDockerImages(image)
-	return s.Builder.BuildResponse()
+func (s *Builder) BuildCapabilities(context.Context, *builderv0.BuildCapabilitiesRequest) (*builderv0.BuildCapabilitiesResponse, error) {
+	return &builderv0.BuildCapabilitiesResponse{BuildxSelection: true}, nil
 }
 
 func (s *Builder) Deploy(ctx context.Context, req *builderv0.DeploymentRequest) (*builderv0.DeploymentResponse, error) {
