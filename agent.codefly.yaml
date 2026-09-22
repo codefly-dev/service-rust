@@ -2,3 +2,6 @@ publisher: codefly.dev
 kind: codefly:service
 name: rust
 version: 0.0.37
+release:
+  owner: workflow
+  workflow: release.yml
